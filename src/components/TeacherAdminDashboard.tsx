@@ -18,14 +18,16 @@ import {
 import { ALGORITHMS } from '../data/algorithms';
 import { StudentSubmissionRecord } from '../types/simulator';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
-import { assessWriting } from '../utils/writingCheck';
+import {
+  getReflectionParts,
+  hasWritingFlags,
+  isReflectionComplete,
+  NOTE_FIELDS,
+} from '../utils/writingCheck';
 
-/** 한 학생의 알고리즘별 소감 중 "확인 필요" 신호가 있는 개수 */
+/** 한 학생의 알고리즘별 서술형 기록 중 "확인 필요" 신호가 있는 개수 */
 function countFlaggedReflections(rec: StudentSubmissionRecord): number {
-  return ALGORITHMS.filter((a) => {
-    const d = rec.algorithmDetails?.[a.id];
-    return assessWriting(d?.writingStats, d?.reflection || '').flags.length > 0;
-  }).length;
+  return ALGORITHMS.filter((a) => hasWritingFlags(rec.algorithmDetails?.[a.id])).length;
 }
 import {
   deleteSubmission,
@@ -234,7 +236,7 @@ export const TeacherAdminDashboard: React.FC = () => {
       ...ALGORITHMS.flatMap((a) => [
         `${a.name}_미션수`,
         `${a.name}_퀴즈점수`,
-        `${a.name}_탐구소감`,
+        ...NOTE_FIELDS.map((f) => `${a.name}_${f.csvLabel}`),
         `${a.name}_작성과정`,
       ]),
     ];
@@ -247,12 +249,23 @@ export const TeacherAdminDashboard: React.FC = () => {
     const rows = combinedRecords.map((r) => {
       const algCols = ALGORITHMS.flatMap((a) => {
         const d = r.algorithmDetails?.[a.id];
-        const w = assessWriting(d?.writingStats, d?.reflection || '');
+        const parts = getReflectionParts(d);
+        // 이전 형식(한 칸) 기록은 전체 소감을 "실습한 내용" 열에 넣음
+        const practiceCol = parts[0]?.text || '';
+        const learnedCol = parts.find((p) => p.key === 'learned')?.text || '';
+        const process = parts
+          .map((p) => {
+            const w = p.assessment;
+            const s = w.flags.length > 0 ? `${w.summary} [확인필요: ${w.flags.join(', ')}]` : w.summary;
+            return parts.length > 1 ? `${p.label.slice(2)}: ${s}` : s;
+          })
+          .join(' / ');
         return [
           `${d?.completedMissions?.length || 0}/${a.missions.length}`,
           `${d?.quizScore || 0}/${a.quizzes.length}`,
-          d?.reflection || '',
-          w.flags.length > 0 ? `${w.summary} [확인필요: ${w.flags.join(', ')}]` : w.summary,
+          practiceCol,
+          learnedCol,
+          process,
         ];
       });
 
@@ -587,7 +600,7 @@ export const TeacherAdminDashboard: React.FC = () => {
                           {ALGORITHMS.map((alg) => {
                             const d = rec.algorithmDetails?.[alg.id];
                             const mDone = (d?.completedMissions?.length || 0) === alg.missions.length;
-                            const hasRef = (d?.reflection || '').trim().length >= 10;
+                            const hasRef = isReflectionComplete(d);
                             return (
                               <span
                                 key={alg.id}
@@ -709,26 +722,28 @@ export const TeacherAdminDashboard: React.FC = () => {
                     </div>
 
                     <div className="p-3 rounded-lg bg-white border border-slate-200 text-xs text-slate-800">
-                      <div className="font-bold text-slate-500 mb-1">학생 작성 탐구 소감:</div>
-                      {detail?.reflection ? (
-                        <p className="leading-relaxed whitespace-pre-wrap">{detail.reflection}</p>
-                      ) : (
-                        <p className="text-slate-400 italic">작성된 서술형 소감이 없습니다.</p>
-                      )}
-                      {(() => {
-                        const w = assessWriting(detail?.writingStats, detail?.reflection || '');
-                        return (
-                          <div className="mt-2 pt-2 border-t border-slate-100 text-[11px]">
+                      {getReflectionParts(detail).map((part, idx) => (
+                        <div
+                          key={part.key}
+                          className={idx > 0 ? 'mt-3 pt-3 border-t border-slate-100' : ''}
+                        >
+                          <div className="font-bold text-slate-500 mb-1">{part.label}</div>
+                          {part.text.trim() ? (
+                            <p className="leading-relaxed whitespace-pre-wrap">{part.text}</p>
+                          ) : (
+                            <p className="text-slate-400 italic">작성하지 않았습니다.</p>
+                          )}
+                          <div className="mt-1.5 text-[11px]">
                             <span className="font-bold text-slate-500">작성 과정: </span>
-                            <span className="text-slate-600">{w.summary}</span>
-                            {w.flags.length > 0 && (
+                            <span className="text-slate-600">{part.assessment.summary}</span>
+                            {part.assessment.flags.length > 0 && (
                               <div className="mt-1 px-2 py-1 rounded bg-amber-50 border border-amber-200 text-amber-800 font-semibold">
-                                ⚠ 확인 필요: {w.flags.join(' · ')}
+                                ⚠ 확인 필요: {part.assessment.flags.join(' · ')}
                               </div>
                             )}
                           </div>
-                        );
-                      })()}
+                        </div>
+                      ))}
                     </div>
                   </div>
                 );

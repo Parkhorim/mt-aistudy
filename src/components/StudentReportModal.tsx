@@ -2,6 +2,7 @@ import React from 'react';
 import { CheckCircle2, Printer, X, Cloud, HardDriveDownload } from 'lucide-react';
 import { ALGORITHMS } from '../data/algorithms';
 import { StudentSubmissionRecord } from '../types/simulator';
+import { getReflectionParts } from '../utils/writingCheck';
 
 interface Props {
   record: StudentSubmissionRecord;
@@ -101,9 +102,14 @@ export const StudentReportModal: React.FC<Props> = ({
                       </span>
                     </div>
                   </div>
-                  <p className="text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-100">
-                    {d?.reflection ? d.reflection : '(작성된 탐구 소감 없음)'}
-                  </p>
+                  <div className="text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-100 space-y-1">
+                    {getReflectionParts(d).map((part) => (
+                      <p key={part.key} className="whitespace-pre-wrap">
+                        <span className="font-semibold text-slate-700">{part.label}: </span>
+                        {part.text.trim() ? part.text : '(작성 안 함)'}
+                      </p>
+                    ))}
+                  </div>
                 </div>
               );
             })}

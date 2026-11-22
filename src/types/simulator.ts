@@ -56,15 +56,21 @@ export interface WritingStats {
   largeInsertions: number; // 한 번에 15자 이상 들어온 횟수 (자동완성·우회 입력 의심)
 }
 
+/** 서술형 기록 칸: 실습해 본 내용 / 알게 된 내용 */
+export type NoteField = 'practice' | 'learned';
+
 export interface AlgorithmProgress {
   completedMissions: string[];
   quizAnswers: Record<string, number | string>;
   quizSubmitted: boolean;
   quizScore: number;
+  /** 두 칸을 합친 전체 소감 (이전 버전 기록은 이 칸 하나만 있음) */
   reflection: string;
   metricsSummary: string;
   updatedAt: string;
-  writingStats?: WritingStats; // 이전 버전 제출 기록에는 없음
+  practiceNote?: string; // ① 실습해 본 내용
+  learnedNote?: string; // ② 알게 된 내용
+  writingStats?: Partial<Record<NoteField, WritingStats>>; // 칸별 작성 과정 기록
 }
 
 export interface StudentInfo {

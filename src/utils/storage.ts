@@ -1,6 +1,6 @@
 import { ALGORITHMS } from '../data/algorithms';
 import { supabase } from '../lib/supabase';
-import { EMPTY_WRITING_STATS } from './writingCheck';
+import { isReflectionComplete } from './writingCheck';
 import {
   AlgorithmId,
   AlgorithmProgress,
@@ -81,7 +81,9 @@ export function createInitialProgress(): Record<AlgorithmId, AlgorithmProgress> 
       reflection: '',
       metricsSummary: '실습 전',
       updatedAt: new Date().toISOString(),
-      writingStats: { ...EMPTY_WRITING_STATS },
+      practiceNote: '',
+      learnedNote: '',
+      writingStats: {},
     };
   }
   return initial as Record<AlgorithmId, AlgorithmProgress>;
@@ -166,7 +168,7 @@ export function buildSubmissionRecord(
     completedMissions += p?.completedMissions?.length || 0;
     quizMaxScore += alg.quizzes.length;
     quizTotalScore += p?.quizScore || 0;
-    if ((p?.reflection || '').trim().length >= 10) {
+    if (isReflectionComplete(p)) {
       reflectionCount += 1;
     }
   }

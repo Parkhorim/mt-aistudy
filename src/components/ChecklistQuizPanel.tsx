@@ -8,16 +8,23 @@ import {
   Award,
   Lock,
 } from 'lucide-react';
-import { AlgorithmMeta, AlgorithmProgress, WritingStats } from '../types/simulator';
+import { AlgorithmMeta, AlgorithmProgress, NoteField, WritingStats } from '../types/simulator';
 import { isQuizAnswerCorrect } from '../data/algorithms';
-import { EMPTY_WRITING_STATS, LARGE_INSERT_CHARS, MAX_GAP_MS } from '../utils/writingCheck';
+import {
+  EMPTY_WRITING_STATS,
+  isReflectionComplete,
+  LARGE_INSERT_CHARS,
+  MAX_GAP_MS,
+  MIN_NOTE_CHARS,
+  NOTE_FIELDS,
+} from '../utils/writingCheck';
 
 interface Props {
   algorithm: AlgorithmMeta;
   progress: AlgorithmProgress;
   onSelectQuizAnswer: (questionId: string, answer: number | string) => void;
   onSubmitQuiz: () => void;
-  onChangeReflection: (text: string, writingStats: WritingStats) => void;
+  onChangeNote: (field: NoteField, text: string, writingStats: WritingStats) => void;
 }
 
 export const ChecklistQuizPanel: React.FC<Props> = ({
@@ -25,7 +32,7 @@ export const ChecklistQuizPanel: React.FC<Props> = ({
   progress,
   onSelectQuizAnswer,
   onSubmitQuiz,
-  onChangeReflection,
+  onChangeNote,
 }) => {
   const completedCount = progress.completedMissions.length;
   const totalMissions = algorithm.missions.length;
@@ -34,20 +41,25 @@ export const ChecklistQuizPanel: React.FC<Props> = ({
     if (q.type === 'short') return typeof val === 'string' && val.trim().length > 0;
     return val !== undefined;
   });
-  const reflectionReady = progress.reflection.trim().length >= 10;
+  const reflectionReady = isReflectionComplete(progress);
 
-  // ── 직접 작성 확인: 붙여넣기 차단 + 작성 과정 기록 ──
-  const stats = progress.writingStats ?? EMPTY_WRITING_STATS;
-  const lastInputAt = useRef<number | null>(null);
-  const [pasteNotice, setPasteNotice] = useState(false);
+  // ── 직접 작성 확인: 칸마다 붙여넣기 차단 + 작성 과정 기록 ──
+  const lastInputAt = useRef<Record<NoteField, number | null>>({ practice: null, learned: null });
+  const [pasteNotice, setPasteNotice] = useState<NoteField | null>(null);
   const noticeTimer = useRef<number | undefined>(undefined);
 
-  const handleReflectionInput = (text: string) => {
-    const delta = text.length - progress.reflection.length;
+  const noteText = (field: NoteField) =>
+    (field === 'practice' ? progress.practiceNote : progress.learnedNote) || '';
+  const noteStats = (field: NoteField) => progress.writingStats?.[field] ?? EMPTY_WRITING_STATS;
+
+  const handleNoteInput = (field: NoteField, text: string) => {
+    const stats = noteStats(field);
+    const delta = text.length - noteText(field).length;
     const now = Date.now();
-    const gap = lastInputAt.current === null ? 0 : Math.min(now - lastInputAt.current, MAX_GAP_MS);
-    lastInputAt.current = now;
-    onChangeReflection(text, {
+    const last = lastInputAt.current[field];
+    const gap = last === null ? 0 : Math.min(now - last, MAX_GAP_MS);
+    lastInputAt.current[field] = now;
+    onChangeNote(field, text, {
       ...stats,
       typedChars: stats.typedChars + Math.max(delta, 0),
       deletedChars: stats.deletedChars + Math.max(-delta, 0),
@@ -56,15 +68,13 @@ export const ChecklistQuizPanel: React.FC<Props> = ({
     });
   };
 
-  const blockPaste = (e: React.ClipboardEvent | React.DragEvent) => {
+  const blockPaste = (field: NoteField) => (e: React.ClipboardEvent | React.DragEvent) => {
     e.preventDefault();
-    onChangeReflection(progress.reflection, {
-      ...stats,
-      pasteBlocked: stats.pasteBlocked + 1,
-    });
-    setPasteNotice(true);
+    const stats = noteStats(field);
+    onChangeNote(field, noteText(field), { ...stats, pasteBlocked: stats.pasteBlocked + 1 });
+    setPasteNotice(field);
     window.clearTimeout(noticeTimer.current);
-    noticeTimer.current = window.setTimeout(() => setPasteNotice(false), 3000);
+    noticeTimer.current = window.setTimeout(() => setPasteNotice(null), 3000);
   };
 
   return (
@@ -284,7 +294,7 @@ export const ChecklistQuizPanel: React.FC<Props> = ({
                   : 'bg-slate-100 text-slate-600'
               }`}
             >
-              {reflectionReady ? '작성 완료' : '10자 이상 작성'}
+              {reflectionReady ? '작성 완료' : `두 칸 모두 ${MIN_NOTE_CHARS}자 이상`}
             </span>
           </div>
 
@@ -304,31 +314,50 @@ export const ChecklistQuizPanel: React.FC<Props> = ({
             </ul>
           </div>
 
-          <textarea
-            rows={6}
-            value={progress.reflection}
-            onChange={(e) => handleReflectionInput(e.target.value)}
-            onPaste={blockPaste}
-            onDrop={blockPaste}
-            placeholder={algorithm.reflectionExampleHint}
-            className="w-full rounded-xl border border-slate-200 p-3.5 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 leading-relaxed resize-none"
-          />
-          {pasteNotice && (
-            <p role="alert" className="mt-1.5 text-[11px] font-bold text-rose-600">
-              붙여넣기는 사용할 수 없어요. 내 실험 결과를 직접 입력해 주세요.
-            </p>
-          )}
+          <div className="space-y-3">
+            {NOTE_FIELDS.map((f) => {
+              const text = noteText(f.key);
+              const len = text.trim().length;
+              const ok = len >= MIN_NOTE_CHARS;
+              const inputId = `note-${algorithm.id}-${f.key}`;
+              return (
+                <div key={f.key}>
+                  <div className="flex items-baseline justify-between mb-1">
+                    <label htmlFor={inputId} className="text-xs font-bold text-slate-800">
+                      {f.label}
+                    </label>
+                    <span
+                      className={`text-[11px] font-semibold ${
+                        ok ? 'text-emerald-600' : 'text-slate-400'
+                      }`}
+                    >
+                      {len}자
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mb-1.5">{f.question}</p>
+                  <textarea
+                    id={inputId}
+                    rows={4}
+                    value={text}
+                    onChange={(e) => handleNoteInput(f.key, e.target.value)}
+                    onPaste={blockPaste(f.key)}
+                    onDrop={blockPaste(f.key)}
+                    placeholder={f.placeholder || algorithm.reflectionExampleHint}
+                    className="w-full rounded-xl border border-slate-200 p-3 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 leading-relaxed resize-none"
+                  />
+                  {pasteNotice === f.key && (
+                    <p role="alert" className="mt-1 text-[11px] font-bold text-rose-600">
+                      붙여넣기는 사용할 수 없어요. 직접 입력해 주세요.
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
 
-        <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
-          <span>실험하며 확인한 변화 상황을 직접 적어주세요. (붙여넣기 불가 · 작성 과정이 기록됩니다)</span>
-          <span
-            className={`font-semibold ${
-              reflectionReady ? 'text-emerald-600' : 'text-slate-400'
-            }`}
-          >
-            {progress.reflection.trim().length}자
-          </span>
+        <div className="mt-3 text-xs text-slate-500">
+          내 실험을 떠올리며 직접 적어주세요. (붙여넣기 불가 · 작성 과정이 기록됩니다)
         </div>
       </div>
     </div>

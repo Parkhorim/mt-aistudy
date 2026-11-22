@@ -17,9 +17,11 @@ import {
   AlgorithmId,
   AlgorithmProgress,
   StudentInfo,
+  NoteField,
   StudentSubmissionRecord,
   WritingStats,
 } from './types/simulator';
+import { combineNotes, isReflectionComplete } from './utils/writingCheck';
 import {
   clearStudentSession,
   createInitialProgress,
@@ -173,16 +175,24 @@ export function App() {
   };
 
   // 서술형 소감 수정
-  const handleChangeReflection = (text: string, writingStats: WritingStats) => {
-    setProgress((prev) => ({
-      ...prev,
-      [activeAlgId]: {
-        ...prev[activeAlgId],
-        reflection: text,
-        writingStats,
-        updatedAt: new Date().toISOString(),
-      },
-    }));
+  // 서술형 기록 수정 (① 실습해 본 내용 / ② 알게 된 내용)
+  const handleChangeNote = (field: NoteField, text: string, stats: WritingStats) => {
+    setProgress((prev) => {
+      const curr = prev[activeAlgId];
+      const practiceNote = field === 'practice' ? text : curr.practiceNote || '';
+      const learnedNote = field === 'learned' ? text : curr.learnedNote || '';
+      return {
+        ...prev,
+        [activeAlgId]: {
+          ...curr,
+          practiceNote,
+          learnedNote,
+          reflection: combineNotes(practiceNote, learnedNote),
+          writingStats: { ...curr.writingStats, [field]: stats },
+          updatedAt: new Date().toISOString(),
+        },
+      };
+    });
   };
 
   // 수행 결과 최종 제출
@@ -212,7 +222,7 @@ export function App() {
       doneMissions += p?.completedMissions?.length || 0;
       totalQuiz += alg.quizzes.length;
       scoreQuiz += p?.quizScore || 0;
-      if ((p?.reflection || '').trim().length >= 10) {
+      if (isReflectionComplete(p)) {
         doneReflections += 1;
       }
     }
@@ -417,7 +427,7 @@ export function App() {
                 const isComplete =
                   mDone === mTotal &&
                   p.quizSubmitted &&
-                  p.reflection.trim().length >= 10;
+                  isReflectionComplete(p);
                 const isSelected = activeAlgId === alg.id;
 
                 return (
@@ -526,7 +536,7 @@ export function App() {
               progress={activeProgress}
               onSelectQuizAnswer={handleSelectQuizAnswer}
               onSubmitQuiz={handleSubmitQuiz}
-              onChangeReflection={handleChangeReflection}
+              onChangeNote={handleChangeNote}
             />
           </div>
         )}
