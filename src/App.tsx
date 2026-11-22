@@ -260,7 +260,7 @@ export function App() {
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-[11px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md">
-                  고등학교 1학년 정보
+                  문태고등학교 1학년 정보
                 </span>
                 <span className="hidden sm:inline text-xs text-slate-400">
                   인공지능과 기계학습 실습실
@@ -548,6 +548,20 @@ export function App() {
           </div>
         )}
       </main>
+
+      {/* 하단 제작 표시 */}
+      <footer className="mt-auto border-t border-slate-200 bg-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-1 text-xs text-slate-500">
+          <span>
+            <strong className="font-bold text-slate-700">문태고등학교</strong> 정보 수업 · 기계학습
+            알고리즘 웹 시뮬레이터
+          </span>
+          <span>
+            © {new Date().getFullYear()} 문태고등학교 · Designed by{' '}
+            <strong className="font-bold text-slate-700">HorimT</strong>
+          </span>
+        </div>
+      </footer>
 
       {/* 제출 완료 확인서 모달 */}
       {submittedModalData && (
