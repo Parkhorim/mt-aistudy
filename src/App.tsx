@@ -12,7 +12,12 @@ import {
   LogOut,
   Sparkles,
 } from 'lucide-react';
-import { ALGORITHMS, ALGORITHM_MAP, isQuizAnswerCorrect } from './data/algorithms';
+import {
+  ALGORITHMS,
+  ALGORITHM_MAP,
+  isQuizAnswerCorrect,
+  SCORED_ALGORITHMS,
+} from './data/algorithms';
 import {
   AlgorithmId,
   AlgorithmProgress,
@@ -216,7 +221,8 @@ export function App() {
     let scoreQuiz = 0;
     let doneReflections = 0;
 
-    for (const alg of ALGORITHMS) {
+    // 체험 전용(인공신경망)은 상단 점수 요약에서 제외
+    for (const alg of SCORED_ALGORITHMS) {
       const p = progress[alg.id];
       totalMissions += alg.missions.length;
       doneMissions += p?.completedMissions?.length || 0;
@@ -424,10 +430,9 @@ export function App() {
                 const p = progress[alg.id];
                 const mDone = p.completedMissions.length;
                 const mTotal = alg.missions.length;
-                const isComplete =
-                  mDone === mTotal &&
-                  p.quizSubmitted &&
-                  isReflectionComplete(p);
+                const isComplete = alg.practiceOnly
+                  ? mDone === mTotal
+                  : mDone === mTotal && p.quizSubmitted && isReflectionComplete(p);
                 const isSelected = activeAlgId === alg.id;
 
                 return (
@@ -466,7 +471,9 @@ export function App() {
                           isSelected ? 'text-slate-300' : 'text-slate-400'
                         }`}
                       >
-                        미션 {mDone}/{mTotal} · 퀴즈 {p.quizScore}/{alg.quizzes.length}
+                        {alg.practiceOnly
+                          ? `체험 미션 ${mDone}/${mTotal} · 점수 미반영`
+                          : `미션 ${mDone}/${mTotal} · 퀴즈 ${p.quizScore}/${alg.quizzes.length}`}
                       </div>
                     </div>
                   </button>

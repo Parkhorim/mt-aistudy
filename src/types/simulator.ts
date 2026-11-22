@@ -45,6 +45,8 @@ export interface AlgorithmMeta {
   reflectionPrompt: string;
   reflectionGuideSteps: string[];
   reflectionExampleHint: string;
+  /** true면 체험 미션만 하고 점수(미션률·퀴즈·서술형)에는 넣지 않음 */
+  practiceOnly?: boolean;
 }
 
 /** 서술형 소감 작성 과정 기록 (직접 작성 여부 확인용) */
@@ -52,7 +54,8 @@ export interface WritingStats {
   typedChars: number; // 입력으로 늘어난 글자 수 누적
   deletedChars: number; // 지운 글자 수 누적
   activeMs: number; // 입력 사이 간격 누적(한 번에 최대 30초) = 대략적인 작성 시간
-  pasteBlocked: number; // 막힌 붙여넣기/끌어놓기 시도 횟수
+  pasteCount: number; // 붙여넣기/끌어놓기 횟수 (허용하되 기록)
+  pastedChars: number; // 붙여넣기로 들어온 글자 수 누적
   largeInsertions: number; // 한 번에 15자 이상 들어온 횟수 (자동완성·우회 입력 의심)
 }
 

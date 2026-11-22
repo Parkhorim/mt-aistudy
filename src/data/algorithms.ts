@@ -428,6 +428,7 @@ export const ALGORITHMS: AlgorithmMeta[] = [
   },
   {
     id: 'perceptron',
+    practiceOnly: true, // 체험 미션만 (점수 미반영)
     name: '인공신경망 · 퍼셉트론',
     englishName: 'Perceptron & Neural Network',
     category: '인공신경망 · 딥러닝 기초',
@@ -510,6 +511,13 @@ export const ALGORITHMS: AlgorithmMeta[] = [
       '위 안내 상황(①~③)을 바탕으로 가중치 조절 경험과 XOR에서 은닉층이 필요한 이유를 적어보세요.',
   },
 ];
+
+/** 점수(미션 달성률·퀴즈·서술형)에 들어가는 알고리즘 (체험 전용 제외) */
+export const SCORED_ALGORITHMS: AlgorithmMeta[] = ALGORITHMS.filter((a) => !a.practiceOnly);
+/** 서술형 기록 만점 개수 */
+export const SCORED_REFLECTION_TOTAL = SCORED_ALGORITHMS.length;
+/** 퀴즈 만점 */
+export const SCORED_QUIZ_MAX = SCORED_ALGORITHMS.reduce((s, a) => s + a.quizzes.length, 0);
 
 export const ALGORITHM_MAP: Record<AlgorithmId, AlgorithmMeta> = ALGORITHMS.reduce(
   (acc, item) => {

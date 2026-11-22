@@ -84,6 +84,18 @@ export function getReflectionParts(p?: AlgorithmProgress): ReflectionPart[] {
   });
 }
 
+/** 한 알고리즘의 서술형 기록에서 붙여넣기 횟수·글자 수 합계 */
+export function getPasteTotals(p?: AlgorithmProgress): { count: number; chars: number } {
+  let count = 0;
+  let chars = 0;
+  for (const f of NOTE_FIELDS) {
+    const s = p?.writingStats?.[f.key];
+    count += s?.pasteCount ?? 0;
+    chars += s?.pastedChars ?? 0;
+  }
+  return { count, chars };
+}
+
 /** 확인 필요 신호가 하나라도 있는지 */
 export function hasWritingFlags(p?: AlgorithmProgress): boolean {
   return getReflectionParts(p).some((part) => part.assessment.flags.length > 0);
@@ -93,7 +105,8 @@ export const EMPTY_WRITING_STATS: WritingStats = {
   typedChars: 0,
   deletedChars: 0,
   activeMs: 0,
-  pasteBlocked: 0,
+  pasteCount: 0,
+  pastedChars: 0,
   largeInsertions: 0,
 };
 
@@ -124,7 +137,9 @@ export function assessWriting(stats: WritingStats | undefined, text: string): Wr
   if (!stats) {
     return { hasData: false, summary: '작성 과정 기록 없음', flags: [] };
   }
-  if (len === 0 && stats.pasteBlocked === 0) {
+  const pasteCount = stats.pasteCount ?? 0;
+  const pastedChars = stats.pastedChars ?? 0;
+  if (len === 0 && pasteCount === 0) {
     return { hasData: true, summary: '작성 안 함', flags: [] };
   }
 
@@ -133,8 +148,8 @@ export function assessWriting(stats: WritingStats | undefined, text: string): Wr
   )}`;
 
   const flags: string[] = [];
-  if (stats.pasteBlocked > 0) {
-    flags.push(`붙여넣기 시도 ${stats.pasteBlocked}회`);
+  if (pasteCount > 0) {
+    flags.push(`붙여넣기 ${pasteCount}회 (${pastedChars}자)`);
   }
   if (stats.largeInsertions > 0) {
     flags.push(`한 번에 ${LARGE_INSERT_CHARS}자 이상 입력 ${stats.largeInsertions}회`);

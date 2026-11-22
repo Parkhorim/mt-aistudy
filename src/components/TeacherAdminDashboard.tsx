@@ -15,10 +15,16 @@ import {
   Lock,
   LogOut,
 } from 'lucide-react';
-import { ALGORITHMS } from '../data/algorithms';
+import {
+  ALGORITHMS,
+  SCORED_ALGORITHMS,
+  SCORED_QUIZ_MAX,
+  SCORED_REFLECTION_TOTAL,
+} from '../data/algorithms';
 import { StudentSubmissionRecord } from '../types/simulator';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import {
+  getPasteTotals,
   getReflectionParts,
   hasWritingFlags,
   isReflectionComplete,
@@ -27,7 +33,19 @@ import {
 
 /** 한 학생의 알고리즘별 서술형 기록 중 "확인 필요" 신호가 있는 개수 */
 function countFlaggedReflections(rec: StudentSubmissionRecord): number {
-  return ALGORITHMS.filter((a) => hasWritingFlags(rec.algorithmDetails?.[a.id])).length;
+  return SCORED_ALGORITHMS.filter((a) => hasWritingFlags(rec.algorithmDetails?.[a.id])).length;
+}
+
+/** 한 학생의 전체 붙여넣기 횟수·글자 수 (감점 자료) */
+function getStudentPasteTotals(rec: StudentSubmissionRecord): { count: number; chars: number } {
+  let count = 0;
+  let chars = 0;
+  for (const a of SCORED_ALGORITHMS) {
+    const t = getPasteTotals(rec.algorithmDetails?.[a.id]);
+    count += t.count;
+    chars += t.chars;
+  }
+  return { count, chars };
 }
 import {
   deleteSubmission,
@@ -231,14 +249,20 @@ export const TeacherAdminDashboard: React.FC = () => {
       '제출일시',
       '전체미션달성률(%)',
       '퀴즈총점',
-      '서술형작성수(6개중)',
+      `서술형작성수(${SCORED_REFLECTION_TOTAL}개중)`,
+      '붙여넣기_횟수',
+      '붙여넣기_글자수',
       '작성과정_확인필요_소감수',
-      ...ALGORITHMS.flatMap((a) => [
-        `${a.name}_미션수`,
-        `${a.name}_퀴즈점수`,
-        ...NOTE_FIELDS.map((f) => `${a.name}_${f.csvLabel}`),
-        `${a.name}_작성과정`,
-      ]),
+      ...ALGORITHMS.flatMap((a) =>
+        a.practiceOnly
+          ? [`${a.name}_체험미션수(점수제외)`]
+          : [
+              `${a.name}_미션수`,
+              `${a.name}_퀴즈점수`,
+              ...NOTE_FIELDS.map((f) => `${a.name}_${f.csvLabel}`),
+              `${a.name}_작성과정`,
+            ]
+      ),
     ];
 
     const escapeCsv = (val: string | number) => {
@@ -249,6 +273,9 @@ export const TeacherAdminDashboard: React.FC = () => {
     const rows = combinedRecords.map((r) => {
       const algCols = ALGORITHMS.flatMap((a) => {
         const d = r.algorithmDetails?.[a.id];
+        if (a.practiceOnly) {
+          return [`${d?.completedMissions?.length || 0}/${a.missions.length}`];
+        }
         const parts = getReflectionParts(d);
         // 이전 형식(한 칸) 기록은 전체 소감을 "실습한 내용" 열에 넣음
         const practiceCol = parts[0]?.text || '';
@@ -276,7 +303,9 @@ export const TeacherAdminDashboard: React.FC = () => {
         new Date(r.submittedAt).toLocaleString('ko-KR'),
         `${r.missionProgressPercent}%`,
         `${r.quizTotalScore}/${r.quizMaxScore}`,
-        `${r.reflectionCount}/6`,
+        `${r.reflectionCount}/${SCORED_REFLECTION_TOTAL}`,
+        getStudentPasteTotals(r).count,
+        getStudentPasteTotals(r).chars,
         countFlaggedReflections(r),
         ...algCols,
       ]
@@ -457,7 +486,7 @@ export const TeacherAdminDashboard: React.FC = () => {
             <div>
               <div className="text-xs text-slate-500 font-medium">학급 평균 개념 퀴즈 점수</div>
               <div className="text-2xl font-extrabold text-amber-600 mt-1">
-                {avgQuiz} <span className="text-xs font-normal text-slate-500">/ 18점 만점</span>
+                {avgQuiz} <span className="text-xs font-normal text-slate-500">/ {SCORED_QUIZ_MAX}점 만점</span>
               </div>
             </div>
             <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center">
@@ -582,13 +611,24 @@ export const TeacherAdminDashboard: React.FC = () => {
                         </span>
                       </td>
                       <td className="py-3.5 px-3 font-semibold text-slate-700">
-                        {rec.reflectionCount} / 6개 작성
+                        {rec.reflectionCount} / {SCORED_REFLECTION_TOTAL}개 작성
+                        {(() => {
+                          const paste = getStudentPasteTotals(rec);
+                          return paste.count > 0 ? (
+                            <span
+                              className="block mt-1 w-fit text-[10px] font-bold bg-rose-100 text-rose-800 px-1.5 py-0.5 rounded"
+                              title="복사·붙여넣기 금지 공지 후에도 붙여넣은 기록입니다."
+                            >
+                              📋 붙여넣기 {paste.count}회 · {paste.chars}자
+                            </span>
+                          ) : null;
+                        })()}
                         {(() => {
                           const n = countFlaggedReflections(rec);
                           return n > 0 ? (
                             <span
                               className="block mt-1 w-fit text-[10px] font-bold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded"
-                              title="상세/소감에서 이유를 확인하세요. AI 사용의 증거는 아닙니다."
+                              title="상세/소감에서 이유를 확인하세요."
                             >
                               ⚠ 작성 과정 확인 {n}
                             </span>
@@ -600,13 +640,17 @@ export const TeacherAdminDashboard: React.FC = () => {
                           {ALGORITHMS.map((alg) => {
                             const d = rec.algorithmDetails?.[alg.id];
                             const mDone = (d?.completedMissions?.length || 0) === alg.missions.length;
-                            const hasRef = isReflectionComplete(d);
+                            const hasRef = alg.practiceOnly || isReflectionComplete(d);
                             return (
                               <span
                                 key={alg.id}
-                                title={`${alg.name}: 미션 ${d?.completedMissions?.length || 0}/${
-                                  alg.missions.length
-                                }, 퀴즈 ${d?.quizScore || 0}점`}
+                                title={
+                                  alg.practiceOnly
+                                    ? `${alg.name}: 체험 미션 ${d?.completedMissions?.length || 0}/${alg.missions.length} (점수 제외)`
+                                    : `${alg.name}: 미션 ${d?.completedMissions?.length || 0}/${
+                                        alg.missions.length
+                                      }, 퀴즈 ${d?.quizScore || 0}점`
+                                }
                                 className={`px-2 py-0.5 rounded text-[11px] font-bold border ${
                                   mDone && hasRef
                                     ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
@@ -616,6 +660,7 @@ export const TeacherAdminDashboard: React.FC = () => {
                                 }`}
                               >
                                 {alg.name}
+                                {alg.practiceOnly && ' (체험)'}
                               </span>
                             );
                           })}
@@ -708,11 +753,17 @@ export const TeacherAdminDashboard: React.FC = () => {
                       </div>
                       <div className="flex items-center gap-2 text-xs">
                         <span className="px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800 font-bold">
-                          실습 미션: {mCount} / {alg.missions.length}
+                          {alg.practiceOnly ? '체험 미션' : '실습 미션'}: {mCount} / {alg.missions.length}
                         </span>
-                        <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold">
-                          퀴즈: {detail?.quizScore || 0} / {alg.quizzes.length}점
-                        </span>
+                        {alg.practiceOnly ? (
+                          <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 font-bold">
+                            점수 미반영
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold">
+                            퀴즈: {detail?.quizScore || 0} / {alg.quizzes.length}점
+                          </span>
+                        )}
                         {detail?.metricsSummary && (
                           <span className="px-2.5 py-0.5 rounded-full bg-white border border-slate-200 text-slate-600 font-mono">
                             {detail.metricsSummary}
@@ -721,6 +772,7 @@ export const TeacherAdminDashboard: React.FC = () => {
                       </div>
                     </div>
 
+                    {!alg.practiceOnly && (
                     <div className="p-3 rounded-lg bg-white border border-slate-200 text-xs text-slate-800">
                       {getReflectionParts(detail).map((part, idx) => (
                         <div
@@ -745,6 +797,7 @@ export const TeacherAdminDashboard: React.FC = () => {
                         </div>
                       ))}
                     </div>
+                    )}
                   </div>
                 );
               })}

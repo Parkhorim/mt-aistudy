@@ -42,11 +42,12 @@ export const ChecklistQuizPanel: React.FC<Props> = ({
     return val !== undefined;
   });
   const reflectionReady = isReflectionComplete(progress);
+  const practiceOnly = !!algorithm.practiceOnly;
 
-  // ── 직접 작성 확인: 칸마다 붙여넣기 차단 + 작성 과정 기록 ──
+  // ── 직접 작성 확인: 붙여넣기는 허용하되 칸마다 몰래 기록 (교사 감점 자료) ──
   const lastInputAt = useRef<Record<NoteField, number | null>>({ practice: null, learned: null });
-  const [pasteNotice, setPasteNotice] = useState<NoteField | null>(null);
-  const noticeTimer = useRef<number | undefined>(undefined);
+  // 붙여넣기 직후 들어오는 변경은 "직접 입력"이 아니라 붙여넣기로 셈
+  const pendingPaste = useRef<Record<NoteField, number | null>>({ practice: null, learned: null });
 
   const noteText = (field: NoteField) =>
     (field === 'practice' ? progress.practiceNote : progress.learnedNote) || '';
@@ -59,6 +60,20 @@ export const ChecklistQuizPanel: React.FC<Props> = ({
     const last = lastInputAt.current[field];
     const gap = last === null ? 0 : Math.min(now - last, MAX_GAP_MS);
     lastInputAt.current[field] = now;
+
+    const pasted = pendingPaste.current[field];
+    if (pasted !== null) {
+      pendingPaste.current[field] = null;
+      onChangeNote(field, text, {
+        ...stats,
+        pasteCount: (stats.pasteCount ?? 0) + 1,
+        pastedChars: (stats.pastedChars ?? 0) + pasted,
+        deletedChars: stats.deletedChars + Math.max(-delta, 0),
+        activeMs: stats.activeMs + gap,
+      });
+      return;
+    }
+
     onChangeNote(field, text, {
       ...stats,
       typedChars: stats.typedChars + Math.max(delta, 0),
@@ -68,24 +83,28 @@ export const ChecklistQuizPanel: React.FC<Props> = ({
     });
   };
 
-  const blockPaste = (field: NoteField) => (e: React.ClipboardEvent | React.DragEvent) => {
-    e.preventDefault();
-    const stats = noteStats(field);
-    onChangeNote(field, noteText(field), { ...stats, pasteBlocked: stats.pasteBlocked + 1 });
-    setPasteNotice(field);
-    window.clearTimeout(noticeTimer.current);
-    noticeTimer.current = window.setTimeout(() => setPasteNotice(null), 3000);
+  // 붙여넣기/끌어놓기는 막지 않고, 들어온 글자 수만 표시해 둠 (다음 입력 변경에서 기록)
+  const markPaste = (field: NoteField) => (e: React.ClipboardEvent | React.DragEvent) => {
+    const data =
+      'clipboardData' in e ? e.clipboardData : (e as React.DragEvent).dataTransfer;
+    const len = data?.getData('text/plain')?.length ?? 0;
+    // 빈 클립보드는 변경 이벤트가 없으므로 표시하지 않음
+    pendingPaste.current[field] = len > 0 ? len : null;
   };
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-6">
       {/* 1. 단계별 실습 미션 체크리스트 (실습 수행 자동 인증 전용) */}
-      <div className="lg:col-span-4 bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between">
+      <div
+        className={`${
+          practiceOnly ? 'lg:col-span-12' : 'lg:col-span-4'
+        } bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between`}
+      >
         <div>
           <div className="flex items-center justify-between mb-2">
             <h3 className="font-bold text-slate-800 flex items-center gap-2 text-base">
               <BookOpenCheck className="w-5 h-5 text-indigo-600" />
-              수행 과정 1: 실습 미션 체크
+              {practiceOnly ? '체험 미션' : '수행 과정 1: 실습 미션 체크'}
             </h3>
             <span
               className={`text-xs font-bold px-2.5 py-1 rounded-full ${
@@ -101,6 +120,11 @@ export const ChecklistQuizPanel: React.FC<Props> = ({
             <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
             위 시뮬레이터에서 미션을 직접 수행해야만 자동으로 체크됩니다.
           </p>
+          {practiceOnly && (
+            <p className="text-xs font-semibold text-indigo-800 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2 mb-4">
+              이 단원은 자유롭게 체험해 보는 활동이에요. 퀴즈와 서술형 기록이 없고, 점수에도 들어가지 않아요.
+            </p>
+          )}
 
           <div className="space-y-2.5">
             {algorithm.missions.map((m) => {
@@ -149,6 +173,8 @@ export const ChecklistQuizPanel: React.FC<Props> = ({
         </div>
       </div>
 
+      {!practiceOnly && (
+        <>
       {/* 2. 핵심 개념 확인 미니 퀴즈 */}
       <div className="lg:col-span-4 bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col justify-between">
         <div>
@@ -314,6 +340,13 @@ export const ChecklistQuizPanel: React.FC<Props> = ({
             </ul>
           </div>
 
+          <div
+            role="note"
+            className="mb-3 px-3 py-2 rounded-lg bg-rose-50 border border-rose-200 text-[11px] font-bold text-rose-700"
+          >
+            ⚠ 다른 곳의 글(AI 답변, 인터넷, 친구 글 등)을 복사해서 붙여넣지 마세요. 반드시 직접
+            입력해야 합니다.
+          </div>
           <div className="space-y-3">
             {NOTE_FIELDS.map((f) => {
               const text = noteText(f.key);
@@ -340,16 +373,11 @@ export const ChecklistQuizPanel: React.FC<Props> = ({
                     rows={4}
                     value={text}
                     onChange={(e) => handleNoteInput(f.key, e.target.value)}
-                    onPaste={blockPaste(f.key)}
-                    onDrop={blockPaste(f.key)}
+                    onPaste={markPaste(f.key)}
+                    onDrop={markPaste(f.key)}
                     placeholder={f.placeholder || algorithm.reflectionExampleHint}
                     className="w-full rounded-xl border border-slate-200 p-3 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 leading-relaxed resize-none"
                   />
-                  {pasteNotice === f.key && (
-                    <p role="alert" className="mt-1 text-[11px] font-bold text-rose-600">
-                      붙여넣기는 사용할 수 없어요. 직접 입력해 주세요.
-                    </p>
-                  )}
                 </div>
               );
             })}
@@ -357,9 +385,11 @@ export const ChecklistQuizPanel: React.FC<Props> = ({
         </div>
 
         <div className="mt-3 text-xs text-slate-500">
-          내 실험을 떠올리며 직접 적어주세요. (붙여넣기 불가 · 작성 과정이 기록됩니다)
+          내 실험을 떠올리며 직접 적어주세요.
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 };

@@ -1,4 +1,4 @@
-import { ALGORITHMS } from '../data/algorithms';
+import { ALGORITHMS, SCORED_ALGORITHMS } from '../data/algorithms';
 import { supabase } from '../lib/supabase';
 import { isReflectionComplete } from './writingCheck';
 import {
@@ -156,13 +156,32 @@ export function buildSubmissionRecord(
   student: StudentInfo,
   progress: Record<AlgorithmId, AlgorithmProgress>
 ): StudentSubmissionRecord {
+  return {
+    id: `${student.studentId}_${Date.now()}`,
+    studentId: student.studentId,
+    name: student.name,
+    schoolClass: student.schoolClass || parseSchoolClassFromId(student.studentId),
+    submittedAt: new Date().toISOString(),
+    ...summarizeProgress(progress),
+    algorithmDetails: progress,
+  };
+}
+
+/** 점수 요약 계산 (체험 전용 알고리즘 제외) */
+function summarizeProgress(progress: Record<AlgorithmId, AlgorithmProgress>): {
+  missionProgressPercent: number;
+  quizTotalScore: number;
+  quizMaxScore: number;
+  reflectionCount: number;
+} {
   let totalMissions = 0;
   let completedMissions = 0;
   let quizTotalScore = 0;
   let quizMaxScore = 0;
   let reflectionCount = 0;
 
-  for (const alg of ALGORITHMS) {
+  // 인공신경망 등 체험 전용 알고리즘은 점수에서 제외 (실습 기록은 algorithmDetails에 그대로 저장)
+  for (const alg of SCORED_ALGORITHMS) {
     const p = progress[alg.id];
     totalMissions += alg.missions.length;
     completedMissions += p?.completedMissions?.length || 0;
@@ -176,18 +195,7 @@ export function buildSubmissionRecord(
   const missionProgressPercent =
     totalMissions > 0 ? Math.round((completedMissions / totalMissions) * 100) : 0;
 
-  return {
-    id: `${student.studentId}_${Date.now()}`,
-    studentId: student.studentId,
-    name: student.name,
-    schoolClass: student.schoolClass || parseSchoolClassFromId(student.studentId),
-    submittedAt: new Date().toISOString(),
-    missionProgressPercent,
-    quizTotalScore,
-    quizMaxScore,
-    reflectionCount,
-    algorithmDetails: progress,
-  };
+  return { missionProgressPercent, quizTotalScore, quizMaxScore, reflectionCount };
 }
 
 export function loadLocalSubmissions(): StudentSubmissionRecord[] {
@@ -287,7 +295,7 @@ export async function deleteSubmission(
   return { ok: true };
 }
 
-export const SAMPLE_SUBMISSIONS: StudentSubmissionRecord[] = [
+const RAW_SAMPLE_SUBMISSIONS: StudentSubmissionRecord[] = [
   {
     id: 'sample_10101',
     studentId: '10101',
@@ -496,3 +504,9 @@ export const SAMPLE_SUBMISSIONS: StudentSubmissionRecord[] = [
     },
   },
 ];
+
+// 예시 학생의 점수 요약은 현재 채점 기준(체험 전용 제외)으로 다시 계산해서 사용
+export const SAMPLE_SUBMISSIONS: StudentSubmissionRecord[] = RAW_SAMPLE_SUBMISSIONS.map((s) => ({
+  ...s,
+  ...summarizeProgress(s.algorithmDetails),
+}));

@@ -95,13 +95,18 @@ export const StudentReportModal: React.FC<Props> = ({
                     </span>
                     <div className="flex items-center gap-2">
                       <span className="text-indigo-700 font-semibold">
-                        미션 {mDone}/{alg.missions.length}
+                        {alg.practiceOnly ? '체험 미션' : '미션'} {mDone}/{alg.missions.length}
                       </span>
-                      <span className="text-amber-700 font-semibold">
-                        퀴즈 {d?.quizScore || 0}/{alg.quizzes.length}점
-                      </span>
+                      {alg.practiceOnly ? (
+                        <span className="text-slate-500 font-semibold">점수 미반영</span>
+                      ) : (
+                        <span className="text-amber-700 font-semibold">
+                          퀴즈 {d?.quizScore || 0}/{alg.quizzes.length}점
+                        </span>
+                      )}
                     </div>
                   </div>
+                  {!alg.practiceOnly && (
                   <div className="text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-100 space-y-1">
                     {getReflectionParts(d).map((part) => (
                       <p key={part.key} className="whitespace-pre-wrap">
@@ -110,6 +115,7 @@ export const StudentReportModal: React.FC<Props> = ({
                       </p>
                     ))}
                   </div>
+                  )}
                 </div>
               );
             })}
