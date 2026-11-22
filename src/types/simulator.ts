@@ -47,6 +47,15 @@ export interface AlgorithmMeta {
   reflectionExampleHint: string;
 }
 
+/** 서술형 소감 작성 과정 기록 (직접 작성 여부 확인용) */
+export interface WritingStats {
+  typedChars: number; // 입력으로 늘어난 글자 수 누적
+  deletedChars: number; // 지운 글자 수 누적
+  activeMs: number; // 입력 사이 간격 누적(한 번에 최대 30초) = 대략적인 작성 시간
+  pasteBlocked: number; // 막힌 붙여넣기/끌어놓기 시도 횟수
+  largeInsertions: number; // 한 번에 15자 이상 들어온 횟수 (자동완성·우회 입력 의심)
+}
+
 export interface AlgorithmProgress {
   completedMissions: string[];
   quizAnswers: Record<string, number | string>;
@@ -55,6 +64,7 @@ export interface AlgorithmProgress {
   reflection: string;
   metricsSummary: string;
   updatedAt: string;
+  writingStats?: WritingStats; // 이전 버전 제출 기록에는 없음
 }
 
 export interface StudentInfo {

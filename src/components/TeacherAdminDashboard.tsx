@@ -18,6 +18,15 @@ import {
 import { ALGORITHMS } from '../data/algorithms';
 import { StudentSubmissionRecord } from '../types/simulator';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
+import { assessWriting } from '../utils/writingCheck';
+
+/** 한 학생의 알고리즘별 소감 중 "확인 필요" 신호가 있는 개수 */
+function countFlaggedReflections(rec: StudentSubmissionRecord): number {
+  return ALGORITHMS.filter((a) => {
+    const d = rec.algorithmDetails?.[a.id];
+    return assessWriting(d?.writingStats, d?.reflection || '').flags.length > 0;
+  }).length;
+}
 import {
   deleteSubmission,
   fetchSubmissionsFromCloud,
@@ -221,10 +230,12 @@ export const TeacherAdminDashboard: React.FC = () => {
       '전체미션달성률(%)',
       '퀴즈총점',
       '서술형작성수(6개중)',
+      '작성과정_확인필요_소감수',
       ...ALGORITHMS.flatMap((a) => [
         `${a.name}_미션수`,
         `${a.name}_퀴즈점수`,
         `${a.name}_탐구소감`,
+        `${a.name}_작성과정`,
       ]),
     ];
 
@@ -236,10 +247,12 @@ export const TeacherAdminDashboard: React.FC = () => {
     const rows = combinedRecords.map((r) => {
       const algCols = ALGORITHMS.flatMap((a) => {
         const d = r.algorithmDetails?.[a.id];
+        const w = assessWriting(d?.writingStats, d?.reflection || '');
         return [
           `${d?.completedMissions?.length || 0}/${a.missions.length}`,
           `${d?.quizScore || 0}/${a.quizzes.length}`,
           d?.reflection || '',
+          w.flags.length > 0 ? `${w.summary} [확인필요: ${w.flags.join(', ')}]` : w.summary,
         ];
       });
 
@@ -251,6 +264,7 @@ export const TeacherAdminDashboard: React.FC = () => {
         `${r.missionProgressPercent}%`,
         `${r.quizTotalScore}/${r.quizMaxScore}`,
         `${r.reflectionCount}/6`,
+        countFlaggedReflections(r),
         ...algCols,
       ]
         .map(escapeCsv)
@@ -556,6 +570,17 @@ export const TeacherAdminDashboard: React.FC = () => {
                       </td>
                       <td className="py-3.5 px-3 font-semibold text-slate-700">
                         {rec.reflectionCount} / 6개 작성
+                        {(() => {
+                          const n = countFlaggedReflections(rec);
+                          return n > 0 ? (
+                            <span
+                              className="block mt-1 w-fit text-[10px] font-bold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded"
+                              title="상세/소감에서 이유를 확인하세요. AI 사용의 증거는 아닙니다."
+                            >
+                              ⚠ 작성 과정 확인 {n}
+                            </span>
+                          ) : null;
+                        })()}
                       </td>
                       <td className="py-3.5 px-4">
                         <div className="flex flex-wrap gap-1">
@@ -690,6 +715,20 @@ export const TeacherAdminDashboard: React.FC = () => {
                       ) : (
                         <p className="text-slate-400 italic">작성된 서술형 소감이 없습니다.</p>
                       )}
+                      {(() => {
+                        const w = assessWriting(detail?.writingStats, detail?.reflection || '');
+                        return (
+                          <div className="mt-2 pt-2 border-t border-slate-100 text-[11px]">
+                            <span className="font-bold text-slate-500">작성 과정: </span>
+                            <span className="text-slate-600">{w.summary}</span>
+                            {w.flags.length > 0 && (
+                              <div className="mt-1 px-2 py-1 rounded bg-amber-50 border border-amber-200 text-amber-800 font-semibold">
+                                ⚠ 확인 필요: {w.flags.join(' · ')}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 );

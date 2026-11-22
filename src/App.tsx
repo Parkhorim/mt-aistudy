@@ -18,6 +18,7 @@ import {
   AlgorithmProgress,
   StudentInfo,
   StudentSubmissionRecord,
+  WritingStats,
 } from './types/simulator';
 import {
   clearStudentSession,
@@ -172,12 +173,13 @@ export function App() {
   };
 
   // 서술형 소감 수정
-  const handleChangeReflection = (text: string) => {
+  const handleChangeReflection = (text: string, writingStats: WritingStats) => {
     setProgress((prev) => ({
       ...prev,
       [activeAlgId]: {
         ...prev[activeAlgId],
         reflection: text,
+        writingStats,
         updatedAt: new Date().toISOString(),
       },
     }));

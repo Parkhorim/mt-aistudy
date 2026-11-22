@@ -1,5 +1,6 @@
 import { ALGORITHMS } from '../data/algorithms';
 import { supabase } from '../lib/supabase';
+import { EMPTY_WRITING_STATS } from './writingCheck';
 import {
   AlgorithmId,
   AlgorithmProgress,
@@ -80,6 +81,7 @@ export function createInitialProgress(): Record<AlgorithmId, AlgorithmProgress> 
       reflection: '',
       metricsSummary: '실습 전',
       updatedAt: new Date().toISOString(),
+      writingStats: { ...EMPTY_WRITING_STATS },
     };
   }
   return initial as Record<AlgorithmId, AlgorithmProgress>;

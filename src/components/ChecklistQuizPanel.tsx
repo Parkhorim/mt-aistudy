@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import {
   CheckCircle2,
   Circle,
@@ -8,15 +8,16 @@ import {
   Award,
   Lock,
 } from 'lucide-react';
-import { AlgorithmMeta, AlgorithmProgress } from '../types/simulator';
+import { AlgorithmMeta, AlgorithmProgress, WritingStats } from '../types/simulator';
 import { isQuizAnswerCorrect } from '../data/algorithms';
+import { EMPTY_WRITING_STATS, LARGE_INSERT_CHARS, MAX_GAP_MS } from '../utils/writingCheck';
 
 interface Props {
   algorithm: AlgorithmMeta;
   progress: AlgorithmProgress;
   onSelectQuizAnswer: (questionId: string, answer: number | string) => void;
   onSubmitQuiz: () => void;
-  onChangeReflection: (text: string) => void;
+  onChangeReflection: (text: string, writingStats: WritingStats) => void;
 }
 
 export const ChecklistQuizPanel: React.FC<Props> = ({
@@ -34,6 +35,37 @@ export const ChecklistQuizPanel: React.FC<Props> = ({
     return val !== undefined;
   });
   const reflectionReady = progress.reflection.trim().length >= 10;
+
+  // ── 직접 작성 확인: 붙여넣기 차단 + 작성 과정 기록 ──
+  const stats = progress.writingStats ?? EMPTY_WRITING_STATS;
+  const lastInputAt = useRef<number | null>(null);
+  const [pasteNotice, setPasteNotice] = useState(false);
+  const noticeTimer = useRef<number | undefined>(undefined);
+
+  const handleReflectionInput = (text: string) => {
+    const delta = text.length - progress.reflection.length;
+    const now = Date.now();
+    const gap = lastInputAt.current === null ? 0 : Math.min(now - lastInputAt.current, MAX_GAP_MS);
+    lastInputAt.current = now;
+    onChangeReflection(text, {
+      ...stats,
+      typedChars: stats.typedChars + Math.max(delta, 0),
+      deletedChars: stats.deletedChars + Math.max(-delta, 0),
+      activeMs: stats.activeMs + gap,
+      largeInsertions: stats.largeInsertions + (delta >= LARGE_INSERT_CHARS ? 1 : 0),
+    });
+  };
+
+  const blockPaste = (e: React.ClipboardEvent | React.DragEvent) => {
+    e.preventDefault();
+    onChangeReflection(progress.reflection, {
+      ...stats,
+      pasteBlocked: stats.pasteBlocked + 1,
+    });
+    setPasteNotice(true);
+    window.clearTimeout(noticeTimer.current);
+    noticeTimer.current = window.setTimeout(() => setPasteNotice(false), 3000);
+  };
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-6">
@@ -275,14 +307,21 @@ export const ChecklistQuizPanel: React.FC<Props> = ({
           <textarea
             rows={6}
             value={progress.reflection}
-            onChange={(e) => onChangeReflection(e.target.value)}
+            onChange={(e) => handleReflectionInput(e.target.value)}
+            onPaste={blockPaste}
+            onDrop={blockPaste}
             placeholder={algorithm.reflectionExampleHint}
             className="w-full rounded-xl border border-slate-200 p-3.5 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 leading-relaxed resize-none"
           />
+          {pasteNotice && (
+            <p role="alert" className="mt-1.5 text-[11px] font-bold text-rose-600">
+              붙여넣기는 사용할 수 없어요. 내 실험 결과를 직접 입력해 주세요.
+            </p>
+          )}
         </div>
 
         <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
-          <span>실험하며 확인한 변화 상황을 자유롭게 적어주세요.</span>
+          <span>실험하며 확인한 변화 상황을 직접 적어주세요. (붙여넣기 불가 · 작성 과정이 기록됩니다)</span>
           <span
             className={`font-semibold ${
               reflectionReady ? 'text-emerald-600' : 'text-slate-400'
