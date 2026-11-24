@@ -52,7 +52,24 @@ import {
   fetchSubmissionsFromCloud,
   getAdminPin,
   SAMPLE_SUBMISSIONS,
+  SubmissionHistory,
 } from '../utils/storage';
+
+/** 같은 학번의 모든 제출에서 쓰인 서로 다른 이름 */
+function distinctNames(list: StudentSubmissionRecord[]): string[] {
+  return Array.from(new Set(list.map((r) => r.name.trim()).filter(Boolean)));
+}
+
+/** 같은 학번의 모든 제출을 합친 붙여넣기 횟수·글자 수 */
+function pasteTotalsAcross(list: StudentSubmissionRecord[]): { count: number; chars: number } {
+  return list.reduce(
+    (acc, r) => {
+      const t = getStudentPasteTotals(r);
+      return { count: acc.count + t.count, chars: acc.chars + t.chars };
+    },
+    { count: 0, chars: 0 }
+  );
+}
 
 export const TeacherAdminDashboard: React.FC = () => {
   const [authenticated, setAuthenticated] = useState<boolean>(false);
@@ -63,6 +80,12 @@ export const TeacherAdminDashboard: React.FC = () => {
   const [loggingIn, setLoggingIn] = useState<boolean>(false);
 
   const [records, setRecords] = useState<StudentSubmissionRecord[]>([]);
+  const [history, setHistory] = useState<SubmissionHistory>({});
+  // 학번별 제출 이력 (예시 데이터는 이력이 없으므로 자기 자신 1건)
+  const historyOf = (rec: StudentSubmissionRecord): StudentSubmissionRecord[] => {
+    const list = history[rec.studentId];
+    return list && list.some((r) => r.id === rec.id) ? list : [rec];
+  };
   const [includeSampleData, setIncludeSampleData] = useState<boolean>(true);
   const [loading, setLoading] = useState<boolean>(false);
   const [cloudStatus, setCloudStatus] = useState<string>('');
@@ -78,6 +101,7 @@ export const TeacherAdminDashboard: React.FC = () => {
     setLoading(true);
     const res = await fetchSubmissionsFromCloud();
     setRecords(res.records);
+    setHistory(res.history);
     if (res.fromCloud) {
       setCloudStatus(
         `Supabase 실시간 연결됨 · 마지막 갱신 ${new Date().toLocaleTimeString('ko-KR')}`
@@ -252,6 +276,10 @@ export const TeacherAdminDashboard: React.FC = () => {
       `서술형작성수(${SCORED_REFLECTION_TOTAL}개중)`,
       '붙여넣기_횟수',
       '붙여넣기_글자수',
+      '제출횟수',
+      '모든제출_이름',
+      '모든제출_붙여넣기_횟수',
+      '모든제출_붙여넣기_글자수',
       '작성과정_확인필요_소감수',
       ...ALGORITHMS.flatMap((a) =>
         a.practiceOnly
@@ -306,6 +334,10 @@ export const TeacherAdminDashboard: React.FC = () => {
         `${r.reflectionCount}/${SCORED_REFLECTION_TOTAL}`,
         getStudentPasteTotals(r).count,
         getStudentPasteTotals(r).chars,
+        historyOf(r).length,
+        distinctNames(historyOf(r)).join(' / '),
+        pasteTotalsAcross(historyOf(r)).count,
+        pasteTotalsAcross(historyOf(r)).chars,
         countFlaggedReflections(r),
         ...algCols,
       ]
@@ -583,6 +615,30 @@ export const TeacherAdminDashboard: React.FC = () => {
                         <div className="font-extrabold text-slate-900 text-sm">
                           {rec.studentId} {rec.name}
                         </div>
+                        {(() => {
+                          const list = historyOf(rec);
+                          const names = distinctNames(list);
+                          return (
+                            <>
+                              {list.length > 1 && (
+                                <span
+                                  className="inline-block text-[10px] font-bold bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded mt-0.5 mr-1"
+                                  title="같은 학번으로 여러 번 제출했습니다. 상세/소감에서 이전 제출을 볼 수 있습니다."
+                                >
+                                  🔁 제출 {list.length}회
+                                </span>
+                              )}
+                              {names.length > 1 && (
+                                <span
+                                  className="inline-block text-[10px] font-bold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded mt-0.5"
+                                  title="같은 학번으로 다른 이름이 제출되었습니다. 학번을 잘못 입력한 학생이 있는지 확인하세요."
+                                >
+                                  ⚠ 이름 다름: {names.join(' / ')}
+                                </span>
+                              )}
+                            </>
+                          );
+                        })()}
                         {isSample && (
                           <span className="inline-block text-[10px] font-semibold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded mt-0.5">
                             예시 데이터
@@ -614,14 +670,28 @@ export const TeacherAdminDashboard: React.FC = () => {
                         {rec.reflectionCount} / {SCORED_REFLECTION_TOTAL}개 작성
                         {(() => {
                           const paste = getStudentPasteTotals(rec);
-                          return paste.count > 0 ? (
-                            <span
-                              className="block mt-1 w-fit text-[10px] font-bold bg-rose-100 text-rose-800 px-1.5 py-0.5 rounded"
-                              title="복사·붙여넣기 금지 공지 후에도 붙여넣은 기록입니다."
-                            >
-                              📋 붙여넣기 {paste.count}회 · {paste.chars}자
-                            </span>
-                          ) : null;
+                          const all = pasteTotalsAcross(historyOf(rec));
+                          const earlier = all.count - paste.count;
+                          return (
+                            <>
+                              {paste.count > 0 && (
+                                <span
+                                  className="block mt-1 w-fit text-[10px] font-bold bg-rose-100 text-rose-800 px-1.5 py-0.5 rounded"
+                                  title="복사·붙여넣기 금지 공지 후에도 붙여넣은 기록입니다."
+                                >
+                                  📋 붙여넣기 {paste.count}회 · {paste.chars}자
+                                </span>
+                              )}
+                              {earlier > 0 && (
+                                <span
+                                  className="block mt-1 w-fit text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200 px-1.5 py-0.5 rounded"
+                                  title="최신 제출이 아니라 이전 제출에서 붙여넣은 기록입니다."
+                                >
+                                  📋 이전 제출에서 붙여넣기 {earlier}회 · {all.chars - paste.chars}자
+                                </span>
+                              )}
+                            </>
+                          );
                         })()}
                         {(() => {
                           const n = countFlaggedReflections(rec);
@@ -739,6 +809,52 @@ export const TeacherAdminDashboard: React.FC = () => {
             </div>
 
             <div className="p-5 overflow-y-auto space-y-4">
+              {(() => {
+                const list = historyOf(selectedStudent);
+                if (list.length < 2) return null;
+                return (
+                  <div className="p-4 rounded-xl border border-indigo-200 bg-indigo-50/60 space-y-2">
+                    <div className="text-xs font-bold text-indigo-900">
+                      제출 이력 {list.length}회 · 눌러서 그때 제출한 내용을 볼 수 있습니다
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      {list.map((r, idx) => {
+                        const p = getStudentPasteTotals(r);
+                        const current = r.id === selectedStudent.id;
+                        return (
+                          <button
+                            key={r.id}
+                            type="button"
+                            onClick={() => setSelectedStudent(r)}
+                            aria-pressed={current}
+                            className={`flex flex-wrap items-center gap-x-3 gap-y-1 text-left text-xs px-3 py-2 rounded-lg border transition cursor-pointer ${
+                              current
+                                ? 'bg-white border-indigo-500 ring-1 ring-indigo-500'
+                                : 'bg-white/70 border-slate-200 hover:border-indigo-300'
+                            }`}
+                          >
+                            <span className="font-bold text-slate-900">
+                              {list.length - idx}번째 제출{idx === 0 ? ' (최신)' : ''}
+                            </span>
+                            <span className="text-slate-600">
+                              {new Date(r.submittedAt).toLocaleString('ko-KR')}
+                            </span>
+                            <span className="text-slate-800">이름: {r.name}</span>
+                            <span className="text-slate-600">
+                              미션 {r.missionProgressPercent}% · 퀴즈 {r.quizTotalScore}/{r.quizMaxScore}
+                            </span>
+                            {p.count > 0 && (
+                              <span className="font-bold text-rose-700">
+                                📋 붙여넣기 {p.count}회 · {p.chars}자
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
               {ALGORITHMS.map((alg) => {
                 const detail = selectedStudent.algorithmDetails?.[alg.id];
                 const mCount = detail?.completedMissions?.length || 0;

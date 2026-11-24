@@ -56,18 +56,26 @@ function fromRow(row: SubmissionRow): StudentSubmissionRecord {
   };
 }
 
-/** 같은 학번이 여러 번 제출했으면 가장 최근 기록만 남기고 최신순 정렬 */
-function latestPerStudent(list: StudentSubmissionRecord[]): StudentSubmissionRecord[] {
-  const map = new Map<string, StudentSubmissionRecord>();
+const byNewest = (a: StudentSubmissionRecord, b: StudentSubmissionRecord) =>
+  new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime();
+
+/** 학번별 제출 이력 (최신순). 같은 학번이면 이름이 달라도 한 학생으로 묶음 */
+export type SubmissionHistory = Record<string, StudentSubmissionRecord[]>;
+
+function groupHistory(list: StudentSubmissionRecord[]): SubmissionHistory {
+  const history: SubmissionHistory = {};
   for (const r of list) {
-    const prev = map.get(r.studentId);
-    if (!prev || new Date(r.submittedAt) >= new Date(prev.submittedAt)) {
-      map.set(r.studentId, r);
-    }
+    (history[r.studentId] ||= []).push(r);
   }
-  return Array.from(map.values()).sort(
-    (a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()
-  );
+  for (const id of Object.keys(history)) history[id].sort(byNewest);
+  return history;
+}
+
+/** 학번별 가장 최근 제출만 남기고 최신순 정렬 */
+function latestPerStudent(history: SubmissionHistory): StudentSubmissionRecord[] {
+  return Object.values(history)
+    .map((list) => list[0])
+    .sort(byNewest);
 }
 
 export function createInitialProgress(): Record<AlgorithmId, AlgorithmProgress> {
@@ -210,9 +218,8 @@ export function loadLocalSubmissions(): StudentSubmissionRecord[] {
 
 export function saveLocalSubmission(record: StudentSubmissionRecord): StudentSubmissionRecord[] {
   const existing = loadLocalSubmissions();
-  // 동일 학번이 다시 제출하면 최신 기록으로 업데이트
-  const filtered = existing.filter((item) => item.studentId !== record.studentId);
-  const updated = [record, ...filtered];
+  // 다시 제출해도 이전 기록을 지우지 않고 이력으로 남김 (Supabase와 같은 방식)
+  const updated = [record, ...existing];
   localStorage.setItem(SUBMISSIONS_KEY, JSON.stringify(updated));
   return updated;
 }
@@ -254,13 +261,15 @@ export async function submitToCloudAndLocal(
 
 /** 교사용: 제출 기록 조회 (Supabase 연결 시 DB, 아니면 이 브라우저 기록) */
 export async function fetchSubmissionsFromCloud(): Promise<{
-  records: StudentSubmissionRecord[];
+  records: StudentSubmissionRecord[]; // 학번별 최신 제출
+  history: SubmissionHistory; // 학번별 전체 제출 이력 (최신순)
   fromCloud: boolean;
   error?: string;
 }> {
-  const localRecords = loadLocalSubmissions();
+  const localHistory = groupHistory(loadLocalSubmissions());
+  const local = { records: latestPerStudent(localHistory), history: localHistory };
   if (!supabase) {
-    return { records: localRecords, fromCloud: false };
+    return { ...local, fromCloud: false };
   }
 
   const { data, error } = await supabase
@@ -270,10 +279,10 @@ export async function fetchSubmissionsFromCloud(): Promise<{
     .limit(5000);
 
   if (error) {
-    return { records: localRecords, fromCloud: false, error: error.message };
+    return { ...local, fromCloud: false, error: error.message };
   }
-  const cloudRecords = (data as SubmissionRow[]).map(fromRow);
-  return { records: latestPerStudent(cloudRecords), fromCloud: true };
+  const history = groupHistory((data as SubmissionRow[]).map(fromRow));
+  return { records: latestPerStudent(history), history, fromCloud: true };
 }
 
 /** 교사용: 해당 학번의 제출 기록 전체 삭제 */
